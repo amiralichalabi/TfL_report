@@ -1,26 +1,43 @@
 name: poll-tfl
+# One run polls TfL every 2 minutes for ~5h40m, then starts the next run itself.
+# The cron line is only a safety net that restarts the chain if it ever breaks.
 on:
+  workflow_dispatch: {}
   schedule:
-    - cron: "7,17,27,37,47,57 * * * *"   # every 10 min at odd minutes (avoids the busy :00/:05 slots)
-  workflow_dispatch: {}      # lets you start it manually from the Actions tab
+    - cron: "17 */3 * * *"
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: poll-tfl
   cancel-in-progress: false
 jobs:
   poll:
     runs-on: ubuntu-latest
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install requests
-      - run: python step2_poll_tfl.py --once
-      - name: Commit data if changed
+      - name: Poll every 2 minutes
         run: |
           git config user.name "poller"
           git config user.email "poller@users.noreply.github.com"
-          git add disruptions.db disruptions.csv
-          git diff --cached --quiet || (git commit -m "update disruptions" && git push)
+          END=$((SECONDS + 20400))
+          while [ $SECONDS -lt $END ]; do
+            python step2_poll_tfl.py --once || echo "poll failed, will retry"
+            git add disruptions.db disruptions.csv
+            if ! git diff --cached --quiet; then
+              git commit -qm "update disruptions"
+              git pull -q --rebase --autostash || true
+              git push -q || echo "push failed, will retry next round"
+            fi
+            sleep 120
+          done
+      - name: Start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run poll.yml --repo "$GITHUB_REPOSITORY"
