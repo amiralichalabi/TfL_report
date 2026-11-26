@@ -1,7 +1,7 @@
 name: poll-tfl
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes (GitHub's minimum; real runs may be delayed)
+    - cron: "7,17,27,37,47,57 * * * *"   # every 10 min at odd minutes (avoids the busy :00/:05 slots)
   workflow_dispatch: {}      # lets you start it manually from the Actions tab
 permissions:
   contents: write
